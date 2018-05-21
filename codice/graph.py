@@ -5,7 +5,7 @@ import os
 from collections import defaultdict
 import numpy as np
 from sklearn.metrics import f1_score
-from code import utils
+from codice import utils
 from itertools import islice
 
 
@@ -24,7 +24,7 @@ def createGraph(semantic_relationships, graph_file = None):
         for relationship, nodes in semantic_relationships[lemma].items():
             for node in nodes:
                 if node in keys:
-                    G.add_edge(lemma, node, v = relationship)
+                    G.add_edge(lemma, node, v = relationship, weight=1.0)
 
     if graph_file is not None:
         nx.write_multiline_adjlist(G,graph_file)
@@ -102,16 +102,17 @@ def extendGraph(G, synsets_ditionary, document_graph=False):
             TG.add_node(k)
         TG.add_nodes_from(list(v.keys()))
     for k, v in synsets_ditionary.items():
+
         for vertex, relationship in v.items():
             if len(relationship) == 0:
-                if document_graph:
-                    TG.add_edge(k, vertex)
                 continue
+            if document_graph:
+                TG.add_edge(k, vertex)
 
             for _, synsets in relationship.items():
                 for s in synsets:
                     if TG.has_node(s):
-                        TG.add_edge(vertex, s)
+                        TG.add_edge(vertex, s, weight=1.0)
                         if document_graph:
                             TG.add_edge(s, vertex)
                             TG.add_edge(k, vertex)
@@ -125,6 +126,44 @@ def plotGraph(G, with_labels = True):
     #     labels = list({e: G.get_edge_data(e[0], e[1])['v'] for e in G.edges()}.values())
     #     nx.draw_networkx_edge_labels(G, pos=pos, labels=labels)
     plt.show()
+
+
+def getWeightCoOc(corpus, synsets_file, win_size=10):
+
+    _, synsets = utils.getSynsetsDictionary(synsets_file)
+    mapping = {}
+
+    for s in synsets:
+        mapping.update({s: len(mapping)})
+
+    inverse_mapping = {v: k for k, v in mapping.items()}
+
+    matrix = np.zeros((len(mapping), len(mapping)))
+
+    for d, sentence in corpus.items():
+        _, synsets = utils.getDocumentsLemmas(sentence)
+        for i in range(len(synsets)):
+            to_iter = np.arange(max(0, i - win_size), min(len(synsets), i + win_size + 1 ))
+            for j in to_iter:
+                if j == i:
+                    continue
+                matrix[mapping[synsets[i]]][mapping[synsets[j]]] += 1
+
+    edges = list()
+
+    for i in range(len(mapping)):
+        for j in range(i+1, len(mapping)):
+            v = matrix[i][j]
+            if v == 0:
+                continue
+            edges.append(
+                (inverse_mapping[i], inverse_mapping[j], v)
+            )
+
+    return edges
+
+
+# def applOcMatrix(G, matrix, mapping):
 
 
 def staticPagerankPrediction(G, test_set, test_synsets_ditionary, dumping = 0.85, pagerank_algo = 'static'):
@@ -148,27 +187,13 @@ def staticPagerankPrediction(G, test_set, test_synsets_ditionary, dumping = 0.85
         pr = nx.pagerank_scipy(TG, alpha=dumping)
 
     results = {}
-    # triangles = [x for x in nx.enumerate_all_cliques(G) if len(x) == 3]
-    #
-    # weights = defaultdict(int)
-    #
-    # for t in triangles:
-    #     weights[(t[0], t[1])] += 1
-    #     weights[(t[1], t[2])] += 1
-    #     weights[(t[2], t[0])] += 1
-    #
-    # for e, v in weights.items():
-    #     TG[e]['weight'] = v
-    #
-    # print(TG.edges)
-
 
     for eval_set in test_set.keys():
         pre = []
         all = []
 
         for sentence in test_set[eval_set].values():
-            lemmas, synsets = utils.getDocumentsLemmas(sentence)
+            lemmas, synsets = utils.getDocumentsLemmas(sentence, True)
             all.extend(synsets)
             for l in lemmas:
                 max_prob = 0
@@ -180,7 +205,7 @@ def staticPagerankPrediction(G, test_set, test_synsets_ditionary, dumping = 0.85
                         best_syn = synsets
                 pre.append(best_syn)
 
-        f1 = f1_score(pre, all, average='macro')
+        f1 = f1_score(pre, all, average='micro')
         results[eval_set] = f1
 
     return results
@@ -195,7 +220,7 @@ def documentPagerankPrediction(G, test_set, test_synsets_ditionary, dumping = 0.
         all = []
 
         for sentence in test_set[eval_set].values():
-            lemmas, synsets = utils.getDocumentsLemmas(sentence)
+            lemmas, synsets = utils.getDocumentsLemmas(sentence, True)
             all.extend(synsets)
 
             dizionario = {}
@@ -237,7 +262,7 @@ def documentPagerankPrediction1(G, test_set, test_synsets_ditionary, dumping = 0
         pre = []
         all = []
         for sentence in test_set[eval_set].values():
-            lemmas, synsets = utils.getDocumentsLemmas(sentence)
+            lemmas, synsets = utils.getDocumentsLemmas(sentence, True)
             all.extend(synsets)
 
             dizionario = {}
@@ -423,7 +448,7 @@ def graphBFSprediction(G, test_set, test_synsets_ditionary, cut=6, degree_heuris
 
         for sentence in test_set[eval_set].values():
 
-            lemmas, synsets = utils.getDocumentsLemmas(sentence)
+            lemmas, synsets = utils.getDocumentsLemmas(sentence, True)
 
             ln_lemmas = len(lemmas)
 
@@ -708,6 +733,11 @@ def contexGraphPredictionVoting(G, test_set, test_synsets_ditionary, dumping = 0
 if __name__ == '__main__':
 
     d = utils.getTrainDataset('../semcor.data.xml', '../semcor.gold.key.bnids.txt')
+    getWeightCoOc(d, '../semcor.gold.key.bnids.txt')
+    # _, synsets = utils.getSynsetsDictionary('../semcor.gold.key.bnids.txt')
+    # print(d.keys())
+    # print(d)
+    exit()
     synG = createGraph(semantic_relationships={}, graph_file='train_graph.adjlist')
     # relationships, _ = utils.getAssociatedSynsets(file='../data_train.json', testset=None, limit=0)
     # G = createDocumentsGraph(d, sem_rel=relationships, sem_graph=synG)

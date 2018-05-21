@@ -1,5 +1,5 @@
-from code import utils
-from code import graph
+from codice import utils
+from codice import graph
 from collections import  Counter
 import time
 import argparse
@@ -18,47 +18,15 @@ import networkx as nx
 # parser.add_argument('--test_dict', nargs='?', default='../data_train.json',
 #                     help='The already created dictionary of train dataset')
 
-# train = utils.getTrainDataset(corpus='../semcor.data.xml', keysfile='../semcor.gold.key.bnids.txt')
+train = utils.getTrainDataset(corpus='../semcor.data.xml', keysfile='../semcor.gold.key.bnids.txt')
 train_rel, lemmas = utils.getSemanticRelationships(file='../data_train.json', keyFile= '../semcor.gold.key.bnids.txt', limit=0)
-# print(len(relationships), len(lemmas))
 
 testset = utils.getEvalDataset('../ALL.data.xml', '../ALL.gold.key.bnids.txt')
 relationships, _ = utils.getAssociatedSynsets(file='../data_eval_WN.json', testset=None, limit=0)
 
 G = graph.createGraph(semantic_relationships=train_rel, graph_file='train_graph.adjlist')
-# cycls_3 = [c for c in nx.cycle_basis(G) if len(c)==3]
-#
-# print(cycls_3)
-# print(G.has_edge(cycls_3[0][0], cycls_3[0][-1]))
-#
-# val = dict()
-# for c in cycls_3:
-#     coppia = (c[0],c[1])
-#     coppia1 = (c[1],c[0])
-#
-#     if coppia in val:
-#         val[coppia]+=1
-#     else:
-#         val[coppia] = 1
-#
-# for c in cycls_3:
-#     coppia1 = (c[1], c[0])
-#
-#     if coppia1 in val:
-#         print('DENTRO')
-# # for c in val.keys():
-# #     print(c, val[c])
-#
-#
-# exit()
 
-# predictions = graph.graphBFSprediction(G, testset, test_synsets_ditionary=relationships)
-# print('Graph BFS predictions:', predictions)
-# exit()
-#
-# predictions = graph.graphDegreePrediction(G, testset, test_synsets_ditionary=relationships, contex = 4)
-# print('Graph degree predictions:', predictions)
-# exit()
+print('Normal Graph')
 predictions = graph.staticPagerankPrediction(G, testset, test_synsets_ditionary=relationships, pagerank_algo='static')
 print('Static predictions:', predictions)
 
@@ -68,20 +36,23 @@ print('Static mass predictions:', predictions)
 predictions_documents = graph.documentPagerankPrediction(G, testset, relationships)
 print('Documets prediction: ', predictions_documents)
 
-# predictions_documents = graph.documentPagerankPrediction1(G, testset, relationships)
-# print('Documets prediction1: ', predictions_documents)
-#
-# # predictions_dyn = graph.dynamicPagerankPrediction(G, testset, relationships, contex=20)
-# print('Dynamic predictions:', predictions_dyn)
 
-# graph.dynamicPagerankPrediction(G,testset,relationships,contex=0)
-# print(predictions)
-# print(Counter(predictions.values()))
-# # print(time.time() - s)
-# # print(relationships['make_VERB'])
-# print(utils.calculateScores(testset, predictions))
+coG = G.copy()
+coG.add_weighted_edges_from(graph.getWeightCoOc(corpus=train, synsets_file='../semcor.gold.key.bnids.txt', win_size=10))
 
-# graph.plotGraph(G.subgraph(neig))
+
+print('coOcc Graph')
+predictions = graph.staticPagerankPrediction(coG, testset, test_synsets_ditionary=relationships, pagerank_algo='static')
+print('Static predictions:', predictions)
+
+predictions = graph.staticPagerankPrediction(coG, testset, test_synsets_ditionary=relationships, pagerank_algo='mass')
+print('Static mass predictions:', predictions)
+
+predictions_documents = graph.documentPagerankPrediction(coG, testset, relationships)
+print('Documets prediction: ', predictions_documents)
+
+predictions = graph.graphBFSprediction(coG, testset, test_synsets_ditionary=relationships, cut=6, degree_heuristic = False)
+print('BFS prediction:', predictions)
+
+
 # nasari, co occurrence, dependeny parse
-
-# bn:00029424n

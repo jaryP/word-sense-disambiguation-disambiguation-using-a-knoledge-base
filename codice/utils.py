@@ -38,9 +38,11 @@ class wf:
 
 def getSynsetsDictionary(file):
     """
+    Given a file containing the sense annotations this function return a set of synsets appearing in the file
+    and a dictionary mapping each lemma to the correct sentence.
 
-    :param file:
-    :return: 
+    :param file: path of the file
+    :return: dictionary {lemma_id: correct_sense} and set of synsets
     """
     keyDict = dict()
     synsets = set()
@@ -53,7 +55,13 @@ def getSynsetsDictionary(file):
 
 
 def getTrainDataset(corpus, keysfile):
-
+    """
+    This function build the train dataset as a dictioanry where a key is a document id and the respective value is a list
+    containing all the words in that document
+    :param corpus: path to the train file
+    :param keysfile: path to the file containing the senses for each lemma in the train dataset.
+    :return: a dictionary {document_id: [list of words in document]}
+    """
     root = ET.parse(corpus).getroot()
 
     keydict, _ = getSynsetsDictionary(keysfile)
@@ -73,6 +81,14 @@ def getTrainDataset(corpus, keysfile):
 
 
 def getEvalDataset(corpus, keysfile):
+    '''
+    This function build the evaluation dataset as a dictioanry where a key is the name of the evaluation dataset
+    and the respective value is a dictioanry where a key is a document id and the respective value is a list
+    containing all the words in that document
+    :param corpus: path to the eval file
+    :param keysfile: path to the file containing the senses for each lemma in the eval dataset.
+    :return: a dictionary {eval_set: {document_id: [list of words in document}}
+    '''
 
     root = ET.parse(corpus).getroot()
 
@@ -91,22 +107,41 @@ def getEvalDataset(corpus, keysfile):
                     sent.append(instance(a.text, a.get('lemma'),a.get('pos'), keydict[a.get('id')]))
         datasets[sentid[0]].update({sentid[1]:sent})
 
-            # datasets[sentid[0]] = documents
-
     return datasets
 
 
-def getDocumentsLemmas(document):
+def getDocumentsLemmas(document, eval = False):
+    '''
+    Give a list this function will return ambiguous words and ground truth synsets
+    :param document: the document represented as a list of words
+    :return: lemmas: list of lemmas, saved as lemma_POS-TAG, in the input and ground truth list associated to lemma list
+    '''
     lemmas = []
     synsets = []
-    for w in document:
-        if isinstance(w,instance):
-            lemmas.append(w.lemma+'_'+w.pos)
-            synsets.append(w.instance)
+
+    # if len(document) == 1:
+    #     document = [document]
+    if eval:
+        document = [document]
+
+    for sentence in document:
+        for w in sentence:
+            if isinstance(w, instance):
+                lemmas.append(w.lemma+'_'+w.pos)
+                synsets.append(w.instance)
     return lemmas, synsets
 
 
 def getAssociatedSynsetsBabelnet(lemma, postag, key):
+
+    '''
+    For the given lemma and pos tag associated to the lemma returns all the associated synsets from WordNet
+    :param lemma: the lemma
+    :param postag: pos tag associated to the lemma
+    :param key: Babelnet key
+    :return: a list of synsets associated to the lemma
+    '''
+
     ur = 'https://babelnet.io/v5/getSynsetIds?lemma={}&searchLang={}&pos={}&source=WN&key={}'.format(lemma, 'EN', postag, key)
     request = urllib2.Request(ur)
     response = urllib2.urlopen(request)
@@ -128,6 +163,13 @@ def getAssociatedSynsetsBabelnet(lemma, postag, key):
 
 
 def getSemanticRelatioshipBabelnet(sid, key, allowedId = []):
+    '''
+    For a given synset returs all the outgoing semantic edges (based on BabelNet)
+    :param sid: id of the synset
+    :param key: Babelnet key
+    :param allowedId: ids to include in the return
+    :return: a dictionary semantic_rel: [id semantically connected]}
+    '''
 
     ur = 'https://babelnet.io/v5/getOutgoingEdges?id=' + sid + '&key=' + key
     request = urllib2.Request(ur)
@@ -158,6 +200,14 @@ def getSemanticRelatioshipBabelnet(sid, key, allowedId = []):
 
 
 def getSemanticRelationships(file, keyFile, limit = -1):
+
+    '''
+    Give a file and the associated keyfile returns the connected synsets for each lemma in the file
+    :param file: the file containing the corpus
+    :param keyFile: the keyfile containing the correct synset for each ambiguous lemma
+    :param limit: limit of synset to fetch from babelnet
+    :return: dictionary {id: {semantic_rel: [id semantically connected]}} and the list of synsets
+    '''
 
     babelkey = '32796f83-09b8-4c0f-8190-f57069a8f3cf'
 
