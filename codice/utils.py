@@ -132,7 +132,7 @@ def getDocumentsLemmas(document, eval = False):
     return lemmas, synsets
 
 
-def getAssociatedSynsetsBabelnet(lemma, postag, key):
+def getAssociatedSynsetsBabelnet(lemma, postag, key, wn = True):
 
     '''
     For the given lemma and pos tag associated to the lemma returns all the associated synsets from WordNet
@@ -142,7 +142,11 @@ def getAssociatedSynsetsBabelnet(lemma, postag, key):
     :return: a list of synsets associated to the lemma
     '''
 
-    ur = 'https://babelnet.io/v5/getSynsetIds?lemma={}&searchLang={}&pos={}&source=WN&key={}'.format(lemma, 'EN', postag, key)
+    if wn:
+        ur = 'https://babelnet.io/v5/getSynsetIds?lemma={}&searchLang={}&POS={}&source=WN&key={}'.format(lemma, 'EN', postag, key)
+    else:
+        ur = 'https://babelnet.io/v5/getSynsetIds?lemma={}&searchLang={}&POS={}&key={}'.format(lemma, 'EN', postag, key)
+
     request = urllib2.Request(ur)
     response = urllib2.urlopen(request)
 
@@ -168,7 +172,7 @@ def getSemanticRelatioshipBabelnet(sid, key, allowedId = []):
     :param sid: id of the synset
     :param key: Babelnet key
     :param allowedId: ids to include in the return
-    :return: a dictionary semantic_rel: [id semantically connected]}
+    :return: a dictionary {semantic_rel: [id semantically connected]}
     '''
 
     ur = 'https://babelnet.io/v5/getOutgoingEdges?id=' + sid + '&key=' + key
@@ -215,7 +219,6 @@ def getSemanticRelationships(file, keyFile, limit = -1):
     if os.path.isfile(file):
         with open(file) as fp:
             data = fp.read()
-
             d = json.loads(data)
 
     keys = list(d.keys())
@@ -256,6 +259,15 @@ def getSemanticRelationships(file, keyFile, limit = -1):
 
 def getAssociatedSynsets(file, testset=None, semantic_rel_know=dict(), limit=-1):
 
+    '''
+    Give a file returns, for each lemma, all the possible synsets and for each one all the semantic relationship
+    :param file: file in which save the json
+    :param testset: the testset
+    :param semantic_rel_know: semantic association alredy know (to avoid useless babelnet request)
+    :param limit: limit of synset to fetch from babelnet
+    :return: a dictioanry {lemma: {semantic_rel: [id semantically connected]}}
+    '''
+
     babelkey = '32796f83-09b8-4c0f-8190-f57069a8f3cf'
 
     d = dict()
@@ -293,8 +305,8 @@ def getAssociatedSynsets(file, testset=None, semantic_rel_know=dict(), limit=-1)
         d[lemma[2]] = connections
         i += 1
         if i % 20 == 0:
-            with open(file, 'w') as fp:
-                fp.write(json.dumps(d))
+                with open(file, 'w') as fp:
+                    fp.write(json.dumps(d))
         if i >= limit and limit != -1:
             break
 
@@ -304,72 +316,99 @@ def getAssociatedSynsets(file, testset=None, semantic_rel_know=dict(), limit=-1)
     return d, list(d.keys())
 
 
-def calculateScores(dataset, predictions):
+def getTestDocuments(file):
+    '''
+    return a list of documents. Each document is formed by ambiguous lemmas
+    :param file: the test file
+    :return: a list of documents [[lemma_pro_id, ...],...]
+    '''
+    docs = []
+    with open(file) as f:
+        for l in f.readlines():
+            val = l.split()
+            doc = []
+            for v in val:
+                v = v.split('|')
+                if len(v) != 4:
+                    continue
+                tosearch_string = v[1].lower() + '_' + v[2]+'_'+v[3]
+                doc.append(tosearch_string)
+            docs.append(doc)
+    return docs
 
-    res = dict.fromkeys(dataset.keys(), (0, 0))
+def getTestDataset(file, json_file, ret= False, semantic_rel_know=dict()):
 
-    for eval_set in dataset.keys():
-        pre = []
-        all = []
-        for sentence in dataset[eval_set].values():
-            for word in sentence:
-                if isinstance(word, instance):
-                    tosearch_string = word.lemma.lower()+'_'+word.pos
-                    pre.append(predictions[tosearch_string])
-                    all.append(word.instance)
-        res[eval_set] = f1_score(pre,all,average='micro')
+    '''
 
-    return res
+    :param file: Test dataset
+    :param json_file: json file containing the semantic relationship for each lemma in the test set
+    :param ret: if the json shoul be returned or not
+    :param semantic_rel_know: dictionary of alredy know semantic relationship
+    :return: list of documents and dictionary {lamma: {semantic_rel:[synsets connected]}}
+    '''
 
+    babelkey = '32796f83-09b8-4c0f-8190-f57069a8f3cf'
 
+    diz = dict()
+    if os.path.isfile(json_file):
+        with open(json_file) as fp:
+            data = fp.read()
+            diz = json.loads(data)
 
-if __name__ == '__main__':
-    pass
-    # s, _ = getSemanticRelationships(file='../data_train_prova.json', keyFile= '../semcor.gold.key.bnids.txt', limit=0)
-    # testset = getEvalDataset('../ALL.data.xml', '../ALL.gold.key.bnids.txt')
-    # print(len(testset['senseval2']['d000']))
-    # print(len(getDocumentsLemmas(testset['senseval2']['d000']))+len(getDocumentsLemmas(testset['senseval2']['d001']))+len(getDocumentsLemmas(testset['senseval2']['d002'])))
-    # # print(type(testset))
-    # d, k = getAssociatedSynsets(file='../data_eval_WN.json', testset=testset, limit=-1, semantic_rel_know=s)
-    # print(len(d))
-    # # print(saveSemanticRelationships(file='../data_test.json', keyFile= ['../ALL.gold.key.bnids.txt'], limit=-1))
-    d = getTrainDataset('../semcor.data.xml', '../semcor.gold.key.bnids.txt')
-    print(len(d['d000']))
-    # # # a,b =getSynsetsDictionary( '../semcor.gold.key.bnids.txt')
-    # # print(list(d.keys()))
-    # # print(len(d[list(d.keys())[0]]))
-    # # for key in d.keys():
-    # #     i = 0
-    # #     for doc in d[key]:
-    # #         for w in doc:
-    # #             if isinstance(w, instance):
-    # #                 i+=1
-    # #     print(key, i)
-    # # for s in d['d000']:
-    # #     for w in s:
-    # #         print(w,end='-')
-    # #     print()
-    # # print(getAssociatedSynsetsBabelnet('apple','NOUN','32796f83-09b8-4c0f-8190-f57069a8f3cf'))
-    # # if os.path.isfile('../data_eval.json'):
-    # #     with open('../data_eval.json') as fp:
-    # #         data = fp.read()
-    # #         d = json.loads(data)
-    # # print(len(d))
-    # # d.pop('test_VERB')
-    # # print(len(d))
-    # # with open('../data_eval.json', 'w') as fp:
-    # #     fp.write(json.dumps(d))
-    # testset = getDataset('../ALL.data.xml', '../ALL.gold.key.bnids.txt')
-    # from collections import defaultdict
-    # a = {}
-    # # a = defaultdict(lambda: 0, testset.keys())
-    # a = dict.fromkeys(testset.keys(), (0,0))
-    # # print(dict(testset.keys()))
-    # print(len(testset['senseval2']))
-    # a['senseval2'] = 'ciao'
-    # print(a)
-    # a = [1, 2, 3, 4, 5, 6, 7, 8]
-    # for i in window1(a,3):
-    #     print(i)
-    #
+    docs = getTestDocuments(file)
 
+    if ret:
+        return docs, diz
+
+    i = 0
+    for doc in docs:
+        for v in doc:
+            lemma, pos, _ = v.rsplit('_')
+            if lemma+'_'+pos not in diz:
+
+                if lemma == '%':
+                    lemma = '%25'
+                try:
+                    com = getAssociatedSynsetsBabelnet(lemma=lemma, postag=pos, key=babelkey)
+
+                    if len(com) == 0:
+                        com = getAssociatedSynsetsBabelnet(lemma=lemma, postag=pos, key=babelkey, wn=False)
+
+                    if com == -1:
+                        break
+
+                    connections = {}
+
+                    for synset in com:
+                        connections[synset] = semantic_rel_know.get(synset, getSemanticRelatioshipBabelnet(synset, babelkey))
+
+                    if lemma == '%25':
+                        lemma = '%'
+
+                    diz[lemma+'_'+pos] = connections
+
+                    i += 1
+                    if i % 20 == 0:
+                        with open(json_file, 'w') as fp:
+                            fp.write(json.dumps(diz))
+
+                except Exception as e:
+                    print(e)
+                    print(lemma, pos)
+
+    with open(json_file, 'w') as fp:
+        fp.write(json.dumps(diz))
+
+    return docs, diz
+
+if __name__ =='__main__':
+
+    train_rel, _ = getSemanticRelationships(file='../data_train.json',
+                                                       keyFile='../semcor.gold.key.bnids.txt', limit=0)
+
+    relationships, _ = getAssociatedSynsets(file='../data_eval_WN.json', testset=None, limit=0)
+
+    z = {**train_rel, **relationships}
+    v = getTestDataset(file = '../test_data.txt', json_file='../test_set.json', ret = False, semantic_rel_know=z)
+    print(len(v[0][0]), len(v))
+    print(v[1].keys())

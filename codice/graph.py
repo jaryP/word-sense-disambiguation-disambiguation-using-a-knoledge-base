@@ -7,10 +7,17 @@ import numpy as np
 from sklearn.metrics import f1_score
 from codice import utils
 from itertools import islice
-
-
+import copy
+import random
 
 def createGraph(semantic_relationships, graph_file = None):
+    '''
+    Build the supervised graph G=(V, E) using networkx library, where V is the set of synsets and E the set of semantic
+    correlation between synsets (vertexes)
+    :param semantic_relationships: the relationship from which build the graph
+    :param graph_file: where to save the file (to avoid creating the graph each time)
+    :return: return the graph
+    '''
 
     if graph_file is not None and os.path.isfile(graph_file):
         return nx.read_multiline_adjlist(graph_file)
@@ -90,10 +97,11 @@ def createDocumentsGraph(train, graph_file = None, sem_rel = None, sem_graph = N
 
 def extendGraph(G, synsets_ditionary, document_graph=False):
     """
-    :param G:
-    :param synsets_ditionary:
-    :param document_graph:
-    :return:
+    Extend the graph with new synsets
+    :param G: the graph to extend
+    :param synsets_ditionary: the dictionary used to extend the graph
+    :param document_graph: if the graph is a document ones
+    :return: return a copy of G extended using relations in synsets_ditionary
     """
     TG = G.copy()
 
@@ -119,16 +127,23 @@ def extendGraph(G, synsets_ditionary, document_graph=False):
     return TG
 
 
-def plotGraph(G, with_labels = True):
-    pos = nx.spring_layout(G)
-    nx.draw(G, pos=pos, with_labels=with_labels)
-    # if with_labels:
-    #     labels = list({e: G.get_edge_data(e[0], e[1])['v'] for e in G.edges()}.values())
-    #     nx.draw_networkx_edge_labels(G, pos=pos, labels=labels)
-    plt.show()
+# def plotGraph(G, with_labels = True):
+#     pos = nx.spring_layout(G)
+#     nx.draw(G, pos=pos, with_labels=with_labels)
+#     # if with_labels:
+#     #     labels = list({e: G.get_edge_data(e[0], e[1])['v'] for e in G.edges()}.values())
+#     #     nx.draw_networkx_edge_labels(G, pos=pos, labels=labels)
+#     plt.show()
 
 
 def getWeightCoOc(corpus, synsets_file, win_size=10):
+    '''
+    Given a corpus of text the function build and return new edges weighted using co-occurrence matrix
+    :param corpus: the corpus of text
+    :param synsets_file: the file from which get the synset associated to the corpus
+    :param win_size: the size to caculate co occurrence value
+    :return: a list of triple [(V1, V2, w),...] where W = coOcMatrix[V1][V2]
+    '''
 
     _, synsets = utils.getSynsetsDictionary(synsets_file)
     mapping = {}
@@ -163,42 +178,40 @@ def getWeightCoOc(corpus, synsets_file, win_size=10):
     return edges
 
 
-# def applOcMatrix(G, matrix, mapping):
-
-
-def staticPagerankPrediction(G, test_set, test_synsets_ditionary, dumping = 0.85, pagerank_algo = 'static'):
+def staticPagerankPrediction(G, eval_set, eval_synsets_dictionary, pagerank_algo='static'):
     """
-
-    :param G:
-    :param test_set:
-    :param test_synsets_ditionary:
-    :param dumping:
-    :param pagerank_algo:
-    :return:
+    This function return the score associated to each eval test using the pagerank algorithm. The graph is extended with
+    all the test data and then pagerank vector is used to predict most likely synset for each lemma. Another approach
+    consists in assign an initial probability only to synsets appearing in the eval corpus.
+    :param G: the graph
+    :param eval_set: the dictionary containing {eval_dataset: {document: [lemmas...]}}
+    :param eval_synsets_dictionary: dictionary containing synsets and associations used to extend the graph
+    :param pagerank_algo: static: each node with same probability, mass=only eval nodes have initial probability
+    :return: f1 score for each eval stored in a dictionary
     """
-    TG = extendGraph(G, test_synsets_ditionary)
+    TG = extendGraph(G, eval_synsets_dictionary)
 
     if pagerank_algo == 'mass':
         dizionario = {}
-        for _, vertex in test_synsets_ditionary.items():
+        for _, vertex in eval_synsets_dictionary.items():
             dizionario.update({k: 1 for k in vertex.keys()})
-        pr = nx.pagerank_scipy(TG, alpha=dumping, personalization=dizionario)
+        pr = nx.pagerank_scipy(TG, personalization=dizionario)
     else:
-        pr = nx.pagerank_scipy(TG, alpha=dumping)
+        pr = nx.pagerank_scipy(TG)
 
     results = {}
 
-    for eval_set in test_set.keys():
+    for eval_set in eval_set.keys():
         pre = []
         all = []
 
-        for sentence in test_set[eval_set].values():
+        for sentence in eval_set[eval_set].values():
             lemmas, synsets = utils.getDocumentsLemmas(sentence, True)
             all.extend(synsets)
             for l in lemmas:
                 max_prob = 0
                 best_syn = 0
-                for synsets in test_synsets_ditionary[l].keys():
+                for synsets in eval_synsets_dictionary[l].keys():
                     rank = pr[synsets]
                     if rank > max_prob:
                         max_prob = rank
@@ -211,15 +224,24 @@ def staticPagerankPrediction(G, test_set, test_synsets_ditionary, dumping = 0.85
     return results
 
 
-def documentPagerankPrediction(G, test_set, test_synsets_ditionary, dumping = 0.85):
+def documentPagerankPrediction(G, eval_set, eval_synsets_dictionary):
+    '''
+    This function return the score associated to each eval test using the pagerank algorithm. The graph is extended each
+    time with a single document then pagerank vector, calculated with probabily on the lemma present in the document,
+    is used to predict most likely synset for each lemma.
+    :param G: the graph
+    :param eval_set: the dictionary containing {eval_dataset: {document: [lemmas...]}}
+    :param eval_synsets_dictionary: dictionary containing synsets and associations used to extend the graph
+    :return: f1 score for each eval stored in a dictionary
+    '''
 
     results = dict()
 
-    for eval_set in test_set.keys():
+    for eval_set in eval_set.keys():
         pre = []
         all = []
 
-        for sentence in test_set[eval_set].values():
+        for sentence in eval_set[eval_set].values():
             lemmas, synsets = utils.getDocumentsLemmas(sentence, True)
             all.extend(synsets)
 
@@ -229,19 +251,19 @@ def documentPagerankPrediction(G, test_set, test_synsets_ditionary, dumping = 0.
             to_add = {}
 
             for l in lemmas:
-                near.update(test_synsets_ditionary[l].keys())
-                to_add.update({l: test_synsets_ditionary[l]})
+                near.update(eval_synsets_dictionary[l].keys())
+                to_add.update({l: eval_synsets_dictionary[l]})
             TG = extendGraph(G, to_add, document_graph=False)
 
             for n in near:
                 dizionario.update({n: 1})
 
-            pr = nx.pagerank_scipy(TG, alpha=dumping, personalization=dizionario)
+            pr = nx.pagerank_scipy(TG, personalization=dizionario)
 
             for l in lemmas:
                 max_prob = 0
                 best_syn = 0
-                for synsets in test_synsets_ditionary[l].keys():
+                for synsets in eval_synsets_dictionary[l].keys():
                     rank = pr[synsets]
                     if rank > max_prob:
                         max_prob = rank
@@ -253,202 +275,164 @@ def documentPagerankPrediction(G, test_set, test_synsets_ditionary, dumping = 0.
 
     return results
 
+# def documentPagerankPrediction1(G, test_set, test_synsets_ditionary, dumping = 0.85):
+#
+#     results = dict()
+#
+#     for eval_set in test_set.keys():
+#         pre = []
+#         all = []
+#         for sentence in test_set[eval_set].values():
+#             lemmas, synsets = utils.getDocumentsLemmas(sentence, True)
+#             all.extend(synsets)
+#
+#             dizionario = {}
+#
+#             near = set()
+#             to_add = {}
+#
+#             for l in lemmas:
+#                 near.update(test_synsets_ditionary[l].keys())
+#                 to_add.update({l: test_synsets_ditionary[l]})
+#             TG = extendGraph(G, to_add, document_graph=False)
+#
+#             for n in near:
+#                 dizionario.update({n: 1})
+#
+#             for l in tqdm.tqdm(lemmas):
+#
+#                 diz = dizionario.copy()
+#                 lemma_syns = list(test_synsets_ditionary[l].keys())
+#
+#                 for syns in lemma_syns:
+#                     diz.update({syns: 0})
+#
+#                 pr = nx.pagerank_scipy(TG, alpha=dumping, personalization=diz)
+#
+#             # for l in lemmas:
+#                 max_prob = 0
+#                 best_syn = 0
+#                 for s in lemma_syns:
+#                     rank = pr[s]
+#                     if rank > max_prob:
+#                         max_prob = rank
+#                         best_syn = s
+#                 pre.append(best_syn)
+#         f1 = f1_score(pre, all, average='micro')
+#         results[eval_set] = f1
+#
+#     return results
+# def dynamicPagerankPrediction1(G, test_set, test_synsets_ditionary, dumping = 0.85, contex=-1, wtw = False):
+#
+#     results = dict()
+#
+#     for eval_set in test_set.keys():
+#         pre = []
+#         all = []
+#         for sentence in test_set[eval_set].values():
+#
+#             lemmas, synsets = utils.getDocumentsLemmas(sentence)
+#
+#             ln_lemmas = len(lemmas)
+#
+#             to_add = {}
+#
+#             for i in tqdm.tqdm(range(ln_lemmas)):
+#                 truth = list(test_synsets_ditionary[lemmas[i]].keys())
+#                 to_iter = np.arange(max(0, i-contex), min(ln_lemmas, i+contex+1))
+#                 near = set()
+#                 all.append(synsets[i])
+#
+#                 for window in to_iter:
+#                     l = lemmas[window]
+#                     keys = test_synsets_ditionary[l].keys()
+#                     near.update(keys)
+#                     to_add[l] = test_synsets_ditionary[l]
+#
+#                 TG = extendGraph(G, to_add)
+#                 dizionario = {k:1 for k in near}
+#                 dizionario.update({k: 0 for k in truth})
+#
+#                 pr = nx.pagerank_scipy(TG, alpha=dumping, personalization=dizionario)
+#
+#                 max_prob = 0
+#                 best_syn = 0
+#                 for s in truth:
+#                     rank = pr[s]
+#                     if rank > max_prob:
+#                         max_prob = rank
+#                         best_syn = s
+#                 pre.append(best_syn)
+#             # print(f1_score(pre, all, average='micro'))
+#
+#         f1 = f1_score(pre, all, average='micro')
+#         results[eval_set] = f1
+#
+#     return results
+# def graphDegreePrediction1(G, test_set, test_synsets_ditionary, dumping = 0.85):
+#
+#     results = dict()
+#
+#     for eval_set in test_set.keys():
+#         pre = []
+#         all = []
+#
+#         if eval_set != 'semeval2007':
+#             continue
+#         for sentence in test_set[eval_set].values():
+#             lemmas, synsets = utils.getDocumentsLemmas(sentence)
+#             all.extend(synsets)
+#
+#             dizionario = {}
+#
+#             near = set()
+#             to_add = {}
+#
+#             for l in lemmas:
+#                 near.update(test_synsets_ditionary[l].keys())
+#                 to_add.update({l: test_synsets_ditionary[l]})
+#             TG = extendGraph(G, to_add, document_graph=False)
+#             vals = {}
+#
+#             for l in tqdm.tqdm(lemmas):
+#
+#                 diz = dizionario.copy()
+#                 lemma_syns = list(test_synsets_ditionary[l].keys())
+#
+#                 for syns in lemma_syns:
+#                     diz.update({syns: 0})
+#
+#                 max_prob = 0
+#                 best_syn = 0
+#                 for s in lemma_syns:
+#                     if s in vals:
+#                         rank = vals.get(s)
+#                     else:
+#                         rank = nx.closeness_centrality(TG, s)
+#                         vals[s] = rank
+#
+#                     if rank > max_prob:
+#                         max_prob = rank
+#                         best_syn = s
+#
+#                 pre.append(best_syn)
+#         f1 = f1_score(pre, all, average='micro')
+#         results[eval_set] = f1
+#
+#     return results
 
-def documentPagerankPrediction1(G, test_set, test_synsets_ditionary, dumping = 0.85):
+def graphBFSprediction(G, test_set, test_synsets_ditionary, cut=6):
 
     results = dict()
-
     for eval_set in test_set.keys():
         pre = []
         all = []
+
         for sentence in test_set[eval_set].values():
             lemmas, synsets = utils.getDocumentsLemmas(sentence, True)
-            all.extend(synsets)
 
-            dizionario = {}
-
-            near = set()
-            to_add = {}
-
-            for l in lemmas:
-                near.update(test_synsets_ditionary[l].keys())
-                to_add.update({l: test_synsets_ditionary[l]})
-            TG = extendGraph(G, to_add, document_graph=False)
-
-            for n in near:
-                dizionario.update({n: 1})
-
-            for l in tqdm.tqdm(lemmas):
-
-                diz = dizionario.copy()
-                lemma_syns = list(test_synsets_ditionary[l].keys())
-
-                for syns in lemma_syns:
-                    diz.update({syns: 0})
-
-                pr = nx.pagerank_scipy(TG, alpha=dumping, personalization=diz)
-
-            # for l in lemmas:
-                max_prob = 0
-                best_syn = 0
-                for s in lemma_syns:
-                    rank = pr[s]
-                    if rank > max_prob:
-                        max_prob = rank
-                        best_syn = s
-                pre.append(best_syn)
-        f1 = f1_score(pre, all, average='micro')
-        results[eval_set] = f1
-
-    return results
-
-
-def dynamicPagerankPrediction1(G, test_set, test_synsets_ditionary, dumping = 0.85, contex=-1, wtw = False):
-
-    results = dict()
-
-    for eval_set in test_set.keys():
-        pre = []
-        all = []
-        if eval_set != 'semeval2007':
-            continue
-        for sentence in test_set[eval_set].values():
-
-            lemmas, synsets = utils.getDocumentsLemmas(sentence)
-            # all.extend(synsets)
-
-            ln_lemmas = len(lemmas)
-
-            to_add = {}
-
-            # for l in lemmas:
-            #     to_add[l] = test_synsets_ditionary[l]
-
-            # TG = extendGraph(G, to_add)
-
-            # diz = {}
-            # g_nodes = G.nodes
-            # for n in g_nodes:
-            #     # if n not in TG.nodes:
-            #     diz.update({n: 1})
-
-            # pr = nx.pagerank_scipy(TG, personalization= diz)
-
-                # d = {k:1 for k, v in to_add.keys()}
-
-            for i in tqdm.tqdm(range(ln_lemmas)):
-                truth = list(test_synsets_ditionary[lemmas[i]].keys())
-                to_iter = np.arange(max(0, i-contex), min(ln_lemmas, i+contex+1))
-                near = set()
-                all.append(synsets[i])
-                # for l in lemmas:
-                #     to_add[l]
-
-                for window in to_iter:
-                    l = lemmas[window]
-                    keys = test_synsets_ditionary[l].keys()
-                    near.update(keys)
-                    to_add[l] = test_synsets_ditionary[l]
-
-                TG = extendGraph(G, to_add)
-                dizionario = {k:1 for k in near}
-                dizionario.update({k: 0 for k in truth})
-
-                # for n in near:
-                #     dizionario.update({n: 1})
-
-                pr = nx.pagerank_scipy(TG, alpha=dumping, personalization=dizionario)
-
-                max_prob = 0
-                best_syn = 0
-                for s in truth:
-                    rank = pr[s]
-                    if rank > max_prob:
-                        max_prob = rank
-                        best_syn = s
-                pre.append(best_syn)
-            # print(f1_score(pre, all, average='micro'))
-
-        f1 = f1_score(pre, all, average='micro')
-        results[eval_set] = f1
-
-    return results
-
-
-def graphDegreePrediction1(G, test_set, test_synsets_ditionary, dumping = 0.85):
-
-    results = dict()
-
-    for eval_set in test_set.keys():
-        pre = []
-        all = []
-
-        if eval_set != 'semeval2007':
-            continue
-        for sentence in test_set[eval_set].values():
-            lemmas, synsets = utils.getDocumentsLemmas(sentence)
-            all.extend(synsets)
-
-            dizionario = {}
-
-            near = set()
-            to_add = {}
-
-            for l in lemmas:
-                near.update(test_synsets_ditionary[l].keys())
-                to_add.update({l: test_synsets_ditionary[l]})
-            TG = extendGraph(G, to_add, document_graph=False)
-            vals = {}
-
-            # for n in near:
-            #     dizionario.update({n: 1})
-            # probs = nx.closeness_centrality(TG)
-
-            for l in tqdm.tqdm(lemmas):
-
-                diz = dizionario.copy()
-                lemma_syns = list(test_synsets_ditionary[l].keys())
-
-                for syns in lemma_syns:
-                    diz.update({syns: 0})
-
-                # pr = nx.pagerank_scipy(TG, alpha=dumping, personalization=diz)
-                # probs = TG.closeness_centrality()
-
-            # for l in lemmas:
-                max_prob = 0
-                best_syn = 0
-                for s in lemma_syns:
-                    if s in vals:
-                        rank = vals.get(s)
-                    else:
-                        rank = nx.closeness_centrality(TG, s)
-                        vals[s] = rank
-
-                    if rank > max_prob:
-                        max_prob = rank
-                        best_syn = s
-
-                pre.append(best_syn)
-        f1 = f1_score(pre, all, average='micro')
-        results[eval_set] = f1
-
-    return results
-
-
-def graphBFSprediction(G, test_set, test_synsets_ditionary, cut=6, degree_heuristic = False):
-
-    results = dict()
-    G = G.to_directed()
-    # TG = extendGraph(G, test_synsets_ditionary, document_graph=False)
-
-    for eval_set in test_set.keys():
-        pre = []
-        all = []
-
-        for sentence in test_set[eval_set].values():
-
-            lemmas, synsets = utils.getDocumentsLemmas(sentence, True)
+            words_path = {}
+            used_path = defaultdict(int)
 
             ln_lemmas = len(lemmas)
 
@@ -457,55 +441,207 @@ def graphBFSprediction(G, test_set, test_synsets_ditionary, cut=6, degree_heuris
 
             for l in lemmas:
                 to_add.update({l: test_synsets_ditionary[l]})
-                diz.update({s:1 for s in test_synsets_ditionary[l].keys()})
+                diz.update({s: 1 for s in test_synsets_ditionary[l].keys()})
             TG = extendGraph(G, to_add, document_graph=False)
+
+            ln_saved = ln_lemmas*(2.0/3.0)
 
             for i in tqdm.tqdm(range(ln_lemmas)):
 
                 curr_lemma = lemmas[i]
                 all.append(synsets[i])
-                dicz = diz.copy()
+                dicz = copy.deepcopy(diz)
+
                 nodes = set()
 
-                for s in test_synsets_ditionary[lemmas[i]].keys():
+                for s in test_synsets_ditionary[curr_lemma].keys():
                     dicz.update({s: 0})
-                    nodes.update(nx.single_source_shortest_path(TG, s, cutoff=cut).keys())
+                    if s not in words_path:
+
+                        if len(words_path) >= ln_saved:
+
+                            less_used = min(used_path, key=used_path.get)
+                            words_path.pop(less_used)
+                            used_path.pop(less_used)
+
+                        words_path[s] = nx.single_source_dijkstra_path(TG, s, cutoff=cut).keys()
+                    used_path[s] += 1
+
+                    nodes.update(words_path[s])
 
                 sub_TG = TG.subgraph(nodes)
-                # probs = sub_TG.degree()
 
-                probs = nx.pagerank_scipy(TG, personalization=dicz)
+                sum = 0
+                for s in dicz.values():
+                    sum += s
 
-                ln_nodes = len(sub_TG.nodes)
-
-                max_prob = -1
                 best_syn = 0
-                for n in test_synsets_ditionary[curr_lemma].keys():
-                    rank = probs[n]  # /ln_nodes
-                    if rank > max_prob:
-                        max_prob = rank
-                        best_syn = n
-                assert (best_syn != 0)
-                pre.append(best_syn)
+                probs = {}
 
-                # print(f1_score(pre, all, average='micro'))
+                try:                                                                                                                                                                                                                                                                                
+                    if sum == 0:
+                        probs = nx.pagerank_scipy(sub_TG, max_iter=200)
+                    else:
+                        probs = nx.pagerank_scipy(sub_TG, max_iter=200, personalization=dicz)
+
+                    max_prob = -1
+                    for n in test_synsets_ditionary[curr_lemma].keys():
+                        rank = probs[n]
+                        if rank > max_prob:
+                            max_prob = rank
+                            best_syn = n
+
+                    assert (best_syn != 0)
+                    pre.append(best_syn)
+
+                except nx.exception.PowerIterationFailedConvergence:
+                    best_syn = list(test_synsets_ditionary[curr_lemma].keys())[0]
+
+
+        print(eval_set, f1_score(pre, all, average='micro'))
         f1 = f1_score(pre, all, average='micro')
         results[eval_set] = f1
+
     return results
 
 
+def graphBFSTest(G, test_set, test_synsets_ditionary, file, cut=2):
+
+    pre = []
+    all = []
+    for doc in test_set:
+
+        words_path = {}
+        diz = {}
+        to_add = {}
+
+        for lemma in doc:
+            lemma, pos, truth = lemma.rsplit('_')
+            all.append(truth)
+            d = test_synsets_ditionary[lemma+'_'+pos]
+            to_add.update({lemma+'_'+pos: d})
+            diz.update({s: 1 for s in d.keys()})
+
+        TG = extendGraph(G, to_add)
+
+        for lemma in doc:
+
+            lemma, pos, t = lemma.rsplit('_')
+            curr_lemma = lemma+'_'+pos
+            dicz = copy.deepcopy(diz)
+
+            nodes = set()
+
+            for s in test_synsets_ditionary[curr_lemma].keys():
+                dicz.update({s: 0})
+                if s not in words_path:
+                    words_path[s] = nx.single_source_dijkstra_path(TG, s, cutoff=cut).keys()
+                nodes.update(words_path[s])
+
+            sub_TG = TG.subgraph(nodes)
+
+            sum = 0
+            for s in dicz.values():
+                sum += s
+
+            best_syn = ''
+            probs = {}
+
+            try:
+                if sum == 0:
+                    probs = nx.pagerank_scipy(sub_TG, max_iter=200)
+                else:
+                    probs = nx.pagerank_scipy(sub_TG, max_iter=200, personalization=dicz)
+
+                max_prob = -1
+                for n in test_synsets_ditionary[curr_lemma].keys():
+                    rank = probs[n]
+                    if rank > max_prob:
+                        max_prob = rank
+                        best_syn = n
+
+            except nx.exception.PowerIterationFailedConvergence:
+                best_syn = list(test_synsets_ditionary[curr_lemma].keys())[0]
+
+            print(best_syn, curr_lemma, t)
+            pre.append(best_syn)
+
+    print(all)
+    print(pre)
+
+
+    with open(file, 'w+') as f:
+        for i in range(len(all)):
+            f.write(all[i]+'\t'+pre[i]+'\n')
+
+
+    #         ln_saved = ln_lemmas*(2.0/3.0)
+    #
+    #         for i in tqdm.tqdm(range(ln_lemmas)):
+    #
+    #             curr_lemma = lemmas[i]
+    #             all.append(synsets[i])
+    #             dicz = copy.deepcopy(diz)
+    #
+    #             nodes = set()
+    #
+    #             for s in test_synsets_ditionary[curr_lemma].keys():
+    #                 dicz.update({s: 0})
+    #                 if s not in words_path:
+    #
+    #                     if len(words_path) >= ln_saved:
+    #
+    #                         less_used = min(used_path, key=used_path.get)
+    #                         words_path.pop(less_used)
+    #                         used_path.pop(less_used)
+    #
+    #                     words_path[s] = nx.single_source_dijkstra_path(TG, s, cutoff=cut).keys()
+    #                 used_path[s] += 1
+    #
+    #                 nodes.update(words_path[s])
+    #
+    #             sub_TG = TG.subgraph(nodes)
+    #
+    #             sum = 0
+    #             for s in dicz.values():
+    #                 sum += s
+    #
+    #             best_syn = 0
+    #             probs = {}
+    #
+    #             try:
+    #                 if sum == 0:
+    #                     probs = nx.pagerank_scipy(sub_TG, max_iter=200)
+    #                 else:
+    #                     probs = nx.pagerank_scipy(sub_TG, max_iter=200, personalization=dicz)
+    #             except nx.exception.PowerIterationFailedConvergence:
+    #                 best_syn = list(test_synsets_ditionary[curr_lemma].keys())[0]
+    #
+    #             max_prob = -1
+    #             for n in test_synsets_ditionary[curr_lemma].keys():
+    #                 rank = probs[n]
+    #                 if rank > max_prob:
+    #                     max_prob = rank
+    #                     best_syn = n
+    #
+    #             assert (best_syn != 0)
+    #             pre.append(best_syn)
+    #
+    #     print(eval_set, f1_score(pre, all, average='micro'))
+    #     f1 = f1_score(pre, all, average='micro')
+    #     results[eval_set] = f1
+    #
+    # return results
+
+'''
 def graphDegreePrediction(G, test_set, test_synsets_ditionary, contex = 5, degree_heuristic = False):
 
     results = dict()
     G = G.to_directed()
-    # TG = extendGraph(G, test_synsets_ditionary, document_graph=True)
 
     for eval_set in test_set.keys():
         pre = []
         all = []
-
-        if eval_set != 'semeval2007':
-            continue
 
         for sentence in test_set[eval_set].values():
 
@@ -532,18 +668,7 @@ def graphDegreePrediction(G, test_set, test_synsets_ditionary, contex = 5, degre
                         neigh = TG.neighbors(s)
                         to_reach.update(islice(neigh, 1, None))
 
-
                 nodes = set()
-                # for node in to_reach:
-                #     for k in test_synsets_ditionary[curr_lemma].keys():
-                #         try:
-                #             path = nx.shortest_path(TG, k, node)
-                #             nodes.update(path)
-                #         except Exception as e:
-                #             nodes.update(k)
-                #             pass
-
-
 
                 sub_TG = nx.subgraph(TG, nodes)
 
@@ -554,12 +679,11 @@ def graphDegreePrediction(G, test_set, test_synsets_ditionary, contex = 5, degre
                     d.update({n:0 for n in test_synsets_ditionary[curr_lemma].keys()})
                     probs = nx.pagerank_scipy(TG)
 
-                ln_nodes = len(sub_TG.nodes)
 
                 max_prob = -1
                 best_syn = 0
                 for n in test_synsets_ditionary[curr_lemma].keys():
-                    rank = probs[n]#/ln_nodes
+                    rank = probs[n]
                     if rank > max_prob:
                         max_prob = rank
                         best_syn = n
@@ -639,6 +763,7 @@ def contexGraphPrediction(G, test_set, test_synsets_ditionary, dumping = 0.85, c
         results[eval_set] = f1
 
     return results
+
 
 def contexGraphPredictionVoting(G, test_set, test_synsets_ditionary, dumping = 0.85, contex=1, d_level = 1):
 
@@ -720,78 +845,32 @@ def contexGraphPredictionVoting(G, test_set, test_synsets_ditionary, dumping = 0
                 print(d)
                 max_key = max(d, key=lambda k: d[k])
                 pre.append(max_key)
-            print(pre, all)
-        print(f1_score(pre, true_syns, average='micro'))
-
-        print(voting)
-        exit()
         f1 = f1_score(pre, true_syns, average='micro')
         results[eval_set] = f1
 
     return results
 
+'''
 if __name__ == '__main__':
+    train = utils.getTrainDataset(corpus='../semcor.data.xml', keysfile='../semcor.gold.key.bnids.txt')
+    train_rel, lemmas = utils.getSemanticRelationships(file='../data_train.json',
+                                                       keyFile='../semcor.gold.key.bnids.txt', limit=0)
 
-    d = utils.getTrainDataset('../semcor.data.xml', '../semcor.gold.key.bnids.txt')
-    getWeightCoOc(d, '../semcor.gold.key.bnids.txt')
-    # _, synsets = utils.getSynsetsDictionary('../semcor.gold.key.bnids.txt')
-    # print(d.keys())
-    # print(d)
-    exit()
-    synG = createGraph(semantic_relationships={}, graph_file='train_graph.adjlist')
-    # relationships, _ = utils.getAssociatedSynsets(file='../data_train.json', testset=None, limit=0)
-    # G = createDocumentsGraph(d, sem_rel=relationships, sem_graph=synG)
-    # G = createGraph(semantic_relationships=[], graph_file='train_graph.adjlist')
-
-    # print(len(G.nodes), len(G.edges))
     testset = utils.getEvalDataset('../ALL.data.xml', '../ALL.gold.key.bnids.txt')
-    relationships, _ = utils.getAssociatedSynsets(file='../data_eval_WN.json', testset=testset, limit=0)
+    relationships, _ = utils.getAssociatedSynsets(file='../data_eval_WN.json', testset=None, limit=0)
 
-    # graphDegreePrediction(synG, testset, relationships, contex=10)
-    #
-    # exit()
-    #
-    # for i in [5, 10, 15, 20]:
-    #     r = contexGraphPrediction(synG, testset, relationships, dumping=0.85, contex=i, d_level=0)
-    #     print(i, 0, r)
-    # for i in [0,1,2]:
-    #     print(i, contexGraphPrediction(synG, testset, relationships, dumping=0.85, contex=30, d_level=i))
-    # exit()
-    #
-    # r = contexGraphPredictionVoting(synG, testset, relationships, dumping=0.85, contex=10, d_level=1)
-    # print(r)
-    # exit()
-    # r = contexGraphPrediction(synG, testset, relationships, dumping=0.85, contex=20, d_level=2)
-    # print(r)
-    # exit()
+    G = createGraph(semantic_relationships=train_rel, graph_file='train_graph.adjlist')
+    coG = G.copy()
+    coG.add_weighted_edges_from(
+        getWeightCoOc(corpus=train, synsets_file='../semcor.gold.key.bnids.txt', win_size=10))
+    # print('coOcc Graph 1')
+    # predictions = graphBFSprediction(coG, testset, test_synsets_ditionary=relationships, cut=1)
+    # print(predictions)
 
-    for i in [40, 45,  50 ,55 ]:
-        r = contexGraphPrediction(synG, testset, relationships, contex=i, d_level=0)
-        print(i, 0, r)
+    # print('coOcc Graph 2')
+    # predictions = graphBFSprediction(coG, testset, test_synsets_ditionary=relationships, cut=2)
+    # print(predictions)
 
-    # for i in [5, 10, 15, 20,25,30]:
-    #     r = contexGraphPrediction(synG, testset, relationships, contex=i, d_level=1)
-    #     print(i, 1,  r)
-
-    # for i in [35, 40, 45, 50]:
-    #     r = contexGraphPrediction(synG, testset, relationships, contex=i, d_level=2)
-    #     print(i, 2, r)
-
-    # n = list(G.neighbors('bn:00083181v'))
-    # n.extend(['bn:00083181v'])
-    # n = list(G.neighbors('long_ADJ'))
-    # n.extend(['long_ADJ'])
-    # n.extend(list(G.neighbors('be_VERB')))
-    # n.extend(['be_VERB'])
-    # # for path in nx.all_shortest_paths(G, source='bn:00083181v', target='bn:00106124a'):
-    # #     print(path)
-    # H = G.subgraph(n)
-    # # for path in nx.all_shortest_paths(G, source='long_ADJ', target='objective_NOUN'):
-    # #     print(path)
-    # # print(n)
-    # print(H.nodes)
-    # # cycls_3 = [c for c in nx.simple_cycles(H) if len(c) == 3]
-    # # print(cycls_3)
-    # # color = nx.get_node_attributes(G, 'subgraph')
-    # # print(G.node['bn:00083181v']['subgraph'])
-    # plotGraph(H, with_labels=True)
+    print('coOcc Graph 3')
+    predictions = graphBFSprediction(coG, testset, test_synsets_ditionary=relationships, cut=2)
+    print(predictions)

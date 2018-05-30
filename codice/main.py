@@ -1,22 +1,7 @@
+from uu import test
+
 from codice import utils
 from codice import graph
-from collections import  Counter
-import time
-import argparse
-import networkx as nx
-
-# parser = argparse.ArgumentParser(description='Jary Pomponi, NLP HW2: WSD using an approach based on graphs')
-#
-# parser.add_argument('--train_text',  nargs='?', default='../semcor.data.xml',
-#                     help='Train text data set')
-# parser.add_argument('--train_text_keys',  nargs='?', default='../semcor.gold.key.bnids.txt',
-#                     help='Train keys data set')
-# parser.add_argument('--graph_path',  nargs='?', default=None,
-#                     help='The path from wich load the graph or save it if the graph does not exists')
-# parser.add_argument('--train_dict', nargs='?', default='../data_train.json',
-#                     help='The already created dictionary of train dataset')
-# parser.add_argument('--test_dict', nargs='?', default='../data_train.json',
-#                     help='The already created dictionary of train dataset')
 
 train = utils.getTrainDataset(corpus='../semcor.data.xml', keysfile='../semcor.gold.key.bnids.txt')
 train_rel, lemmas = utils.getSemanticRelationships(file='../data_train.json', keyFile= '../semcor.gold.key.bnids.txt', limit=0)
@@ -27,32 +12,62 @@ relationships, _ = utils.getAssociatedSynsets(file='../data_eval_WN.json', tests
 G = graph.createGraph(semantic_relationships=train_rel, graph_file='train_graph.adjlist')
 
 print('Normal Graph')
-predictions = graph.staticPagerankPrediction(G, testset, test_synsets_ditionary=relationships, pagerank_algo='static')
-print('Static predictions:', predictions)
+# predictions = graph.staticPagerankPrediction(G, testset, test_synsets_ditionary=relationships, pagerank_algo='static')
+# print('Static predictions:', predictions)
+#
+# predictions = graph.staticPagerankPrediction(G, testset, test_synsets_ditionary=relationships, pagerank_algo='mass')
+# print('Static mass predictions:', predictions)
+#
+# predictions_documents = graph.documentPagerankPrediction(G, testset, relationships)
+# print('Documets prediction: ', predictions_documents)
 
-predictions = graph.staticPagerankPrediction(G, testset, test_synsets_ditionary=relationships, pagerank_algo='mass')
-print('Static mass predictions:', predictions)
-
-predictions_documents = graph.documentPagerankPrediction(G, testset, relationships)
-print('Documets prediction: ', predictions_documents)
+# predictions = graph.graphBFSprediction(G, testset, test_synsets_ditionary=relationships, cut=2)
+# print('BFS prediction:', predictions)
 
 
-coG = G.copy()
-coG.add_weighted_edges_from(graph.getWeightCoOc(corpus=train, synsets_file='../semcor.gold.key.bnids.txt', win_size=10))
+# coG = G.copy()
+# coG.add_weighted_edges_from(graph.getWeightCoOc(corpus=train, synsets_file='../semcor.gold.key.bnids.txt', win_size=10))
 
 
 print('coOcc Graph')
-predictions = graph.staticPagerankPrediction(coG, testset, test_synsets_ditionary=relationships, pagerank_algo='static')
-print('Static predictions:', predictions)
+# predictions = graph.staticPagerankPrediction(coG, testset, test_synsets_ditionary=relationships, pagerank_algo='static')
+# print('Static predictions:', predictions)
+#
+# predictions = graph.staticPagerankPrediction(coG, testset, test_synsets_ditionary=relationships, pagerank_algo='mass')
+# print('Static mass predictions:', predictions)
+#
+# predictions_documents = graph.documentPagerankPrediction(coG, testset, relationships)
+# print('Documets prediction: ', predictions_documents)
 
-predictions = graph.staticPagerankPrediction(coG, testset, test_synsets_ditionary=relationships, pagerank_algo='mass')
-print('Static mass predictions:', predictions)
+# predictions = graph.graphBFSprediction(coG, testset, test_synsets_ditionary=relationships, cut=2)
+# print('BFS prediction:', predictions)
 
-predictions_documents = graph.documentPagerankPrediction(coG, testset, relationships)
-print('Documets prediction: ', predictions_documents)
 
-predictions = graph.graphBFSprediction(coG, testset, test_synsets_ditionary=relationships, cut=6, degree_heuristic = False)
-print('BFS prediction:', predictions)
-
+z = {**train_rel, **relationships}
+v = utils.getTestDataset('../test_data.txt', '../test_set.json', ret = True, semantic_rel_know=z)
+graph.graphBFSTest(G, v[0], v[1], '1544973_test_answer.txt', 1)
 
 # nasari, co occurrence, dependeny parse
+
+
+''' 
+senseval2 2282
+646
+961
+716
+
+sensewval3 1850
+716
+598
+536
+
+semeval07 455 2 h circa
+111
+150
+194
+
+semeval13 1644 5h circa
+
+semeval15 1022 3.5h circa
+
+'''
