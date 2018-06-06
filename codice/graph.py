@@ -201,11 +201,10 @@ def staticPagerankPrediction(G, eval_set, eval_synsets_dictionary, pagerank_algo
 
     results = {}
 
-    for eval_set in eval_set.keys():
+    for eval_set_name in eval_set.keys():
         pre = []
         all = []
-
-        for sentence in eval_set[eval_set].values():
+        for sentence in eval_set[eval_set_name].values():
             lemmas, synsets = utils.getDocumentsLemmas(sentence, True)
             all.extend(synsets)
             for l in lemmas:
@@ -219,7 +218,7 @@ def staticPagerankPrediction(G, eval_set, eval_synsets_dictionary, pagerank_algo
                 pre.append(best_syn)
 
         f1 = f1_score(pre, all, average='micro')
-        results[eval_set] = f1
+        results[eval_set_name] = f1
 
     return results
 
@@ -237,11 +236,11 @@ def documentPagerankPrediction(G, eval_set, eval_synsets_dictionary):
 
     results = dict()
 
-    for eval_set in eval_set.keys():
+    for eval_set_name in eval_set.keys():
         pre = []
         all = []
 
-        for sentence in eval_set[eval_set].values():
+        for sentence in eval_set[eval_set_name].values():
             lemmas, synsets = utils.getDocumentsLemmas(sentence, True)
             all.extend(synsets)
 
@@ -271,18 +270,18 @@ def documentPagerankPrediction(G, eval_set, eval_synsets_dictionary):
                 pre.append(best_syn)
 
         f1 = f1_score(pre, all, average='micro')
-        results[eval_set] = f1
+        results[eval_set_name] = f1
 
     return results
 
-def graphBFSprediction(G, test_set, test_synsets_ditionary, cut=6):
+def graphPathsPrediction(G, test_set, test_synsets_ditionary, cut=6):
 
     results = dict()
-    for eval_set in test_set.keys():
+    for eval_set_name in test_set.keys():
         pre = []
         all = []
 
-        for sentence in test_set[eval_set].values():
+        for sentence in test_set[eval_set_name].values():
             lemmas, synsets = utils.getDocumentsLemmas(sentence, True)
 
             words_path = {}
@@ -352,14 +351,14 @@ def graphBFSprediction(G, test_set, test_synsets_ditionary, cut=6):
                     best_syn = list(test_synsets_ditionary[curr_lemma].keys())[0]
 
 
-        print(eval_set, f1_score(pre, all, average='micro'))
+        print(eval_set_name, f1_score(pre, all, average='micro'))
         f1 = f1_score(pre, all, average='micro')
-        results[eval_set] = f1
+        results[eval_set_name] = f1
 
     return results
 
 
-def graphBFSTest(G, test_set, test_synsets_ditionary, file, cut=2):
+def graphPathTest(G, test_set, test_synsets_ditionary, file, cut=2):
 
     pre = []
     all = []
@@ -718,13 +717,13 @@ if __name__ == '__main__':
     coG.add_weighted_edges_from(
         getWeightCoOc(corpus=train, synsets_file='../semcor.gold.key.bnids.txt', win_size=10))
     # print('coOcc Graph 1')
-    # predictions = graphBFSprediction(coG, testset, test_synsets_ditionary=relationships, cut=1)
+    # predictions = graphPathsPrediction(coG, testset, test_synsets_ditionary=relationships, cut=1)
     # print(predictions)
 
     # print('coOcc Graph 2')
-    # predictions = graphBFSprediction(coG, testset, test_synsets_ditionary=relationships, cut=2)
+    # predictions = graphPathsPrediction(coG, testset, test_synsets_ditionary=relationships, cut=2)
     # print(predictions)
 
     print('coOcc Graph 3')
-    predictions = graphBFSprediction(coG, testset, test_synsets_ditionary=relationships, cut=2)
+    predictions = graphPathsPrediction(coG, testset, test_synsets_ditionary=relationships, cut=2)
     print(predictions)
