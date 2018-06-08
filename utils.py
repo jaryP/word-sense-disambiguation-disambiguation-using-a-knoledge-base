@@ -4,8 +4,6 @@ import json
 from collections import defaultdict
 import os
 import tqdm
-from sklearn.metrics import f1_score
-from itertools import islice
 
 
 class instance:
@@ -400,15 +398,3 @@ def getTestDataset(file, json_file, ret= False, semantic_rel_know=dict()):
         fp.write(json.dumps(diz))
 
     return docs, diz
-
-if __name__ =='__main__':
-
-    train_rel, _ = getSemanticRelationships(file='../data_train.json',
-                                                       keyFile='../semcor.gold.key.bnids.txt', limit=0)
-
-    relationships, _ = getAssociatedSynsets(file='../data_eval_WN.json', testset=None, limit=0)
-
-    z = {**train_rel, **relationships}
-    v = getTestDataset(file = '../test_data.txt', json_file='../test_set.json', ret = False, semantic_rel_know=z)
-    print(len(v[0][0]), len(v))
-    print(v[1].keys())
