@@ -404,12 +404,7 @@ def graphPathTest(G, test_set, test_synsets_ditionary, file, cut=2):
             except nx.exception.PowerIterationFailedConvergence:
                 best_syn = list(test_synsets_ditionary[curr_lemma].keys())[0]
 
-            print(best_syn, curr_lemma, t)
             pre.append(best_syn)
-
-    print(all)
-    print(pre)
-
 
     with open(file, 'w+') as f:
         for i in range(len(all)):
